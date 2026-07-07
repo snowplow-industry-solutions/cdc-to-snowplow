@@ -1,0 +1,40 @@
+service:
+  app_id: ${app_id}
+
+source:
+  connector: postgres
+  hostname: ${source_hostname}
+  port: ${source_port}
+  database: ${source_database}
+  username: ${source_username}
+  password: $${POSTGRES_PASSWORD}
+  slot_name: ${slot_name}
+  publication_name: ${publication_name}
+
+debezium:
+  snapshot_mode: ${snapshot_mode}
+  offset_store:
+    type: jdbc
+    jdbc:
+      username: ${offset_username}
+      password: $${POSTGRES_PASSWORD}
+      table_name: ${offset_table_name}
+  heartbeat_interval_ms: ${heartbeat_interval_ms}
+  publication_autocreate_mode: ${publication_autocreate_mode}
+  provide_transaction_metadata: ${provide_transaction_metadata}
+
+snowplow:
+  collector_url: ${collector_url}
+  cdc_source_schema: ${cdc_source_schema}
+  emitter:
+    batch_size: ${emitter_batch_size}
+    buffer_capacity: ${emitter_buffer_capacity}
+
+tables:
+${tables_yaml}
+
+observability:
+  http:
+    port: ${observability_http_port}
+  heartbeat:
+    interval_ms: ${heartbeat_log_interval_ms}

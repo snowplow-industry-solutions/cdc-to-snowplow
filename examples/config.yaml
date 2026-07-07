@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=../schemas/cdc-service-config.schema.json
+
+service:
+  app_id: orders-cdc
+
+source:
+  connector: postgres
+  hostname: postgres
+  port: 5432
+  database: orders_db
+  username: cdc
+  password: ${POSTGRES_PASSWORD}
+  slot_name: snowplow_cdc
+  publication_name: snowplow_cdc_pub
+
+debezium:
+  snapshot_mode: never
+  offset_store:
+    type: file
+    file_path: /var/lib/cdc/offsets.dat
+  heartbeat_interval_ms: 30000
+  publication_autocreate_mode: filtered
+  provide_transaction_metadata: false
+
+snowplow:
+  collector_url: ${COLLECTOR_URL}
+  cdc_source_schema: iglu:com.snowplowanalytics/cdc_source/jsonschema/1-0-0
+  # buffer_capacity full → emit() blocks → backpressure to Debezium → backpressure to Postgres WAL.
+  emitter:
+    batch_size: 1
+    buffer_capacity: 1000
+
+tables:
+  - name: orders
+    schema: public
+    iglu_schema: iglu:com.example/orders_change/jsonschema/1-0-0
+    primary_key: [id]
+    columns:
+      - id
+      - customer_id
+      - status:
+          transforms: [trim]
+      - total
+
+observability:
+  http:
+    port: 8080
+  heartbeat:
+    interval_ms: 60000

@@ -1,0 +1,18 @@
+{
+  "$schema": "http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#",
+  "description": "Demo schema for the orders table CDC stream. Slice 4: c/u/d/r ops with before/after.",
+  "self": {
+    "vendor": "com.example",
+    "name": "orders_change",
+    "format": "jsonschema",
+    "version": "1-0-0"
+  },
+  "type": "object",
+  "properties": {
+    "op":     { "type": "string", "enum": ["c", "u", "d", "r"] },
+    "before": { "type": ["object", "null"] },
+    "after":  { "type": ["object", "null"] }
+  },
+  "required": ["op"],
+  "additionalProperties": true
+}

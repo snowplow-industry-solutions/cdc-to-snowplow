@@ -1,0 +1,42 @@
+name: CI
+
+# Build + test + distribution smoke check.
+# Triggers on every PR and on pushes to main (O1 / #38).
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same ref to save runner minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build + test + smokeJar
+    # ubuntu-latest ships a running Docker daemon, which the Testcontainers
+    # (postgres) integration tests require. build.gradle.kts already pins the
+    # Docker API version and disables the Ryuk reaper, so no extra setup is needed.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          # Matches jvmToolchain(21) in build.gradle.kts; the smokeJar task
+          # launches the fat JAR with the resolved JDK 21 toolchain.
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Build, test, and smoke-check the fat JAR
+        # smokeJar dependsOn shadowJar, so this single invocation compiles,
+        # runs the test suite, builds build/libs/cdc-service.jar, and proves
+        # it launches (`java -jar … --help`, clean exit).
+        run: ./gradlew --no-daemon test smokeJar

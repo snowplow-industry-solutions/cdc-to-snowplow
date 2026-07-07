@@ -1,0 +1,53 @@
+# Gradle / build
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/**/build/
+out/
+
+# IntelliJ / Android Studio
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Local environment / secrets
+.env
+.env.local
+*.local.yaml
+
+# Debezium offset storage (configurable; default lives outside repo, but if mounted locally)
+offsets.dat
+*.offsets
+
+# Scaffold output (generated, not committed)
+generated/
+
+# OS / editor scratch
+*.swp
+*.swo
+*~
+
+# Terraform (deploy/terraform/) — never commit provider binaries, state, or
+# machine-specific lock hashes; the example modules are fork-and-adapt templates.
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+
+# Agents files
+.claude/
+
+# Personal per-account deploy vars (account IPs, collector URLs) — never commit.
+deploy/terraform/examples/eng-sandbox*.tfvars

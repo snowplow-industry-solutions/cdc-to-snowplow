@@ -1,0 +1,24 @@
+{
+  "$schema": "http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#",
+  "description": "CDC envelope metadata attached as a context entity to every event emitted by the Snowplow Debezium-to-Snowplow CDC service. Carries source identity, log-position lineage, and a column fingerprint of the source table at the moment of emission. lsn/txid/schema are nullable to accommodate future non-Postgres connectors (MySQL, SQL Server, MongoDB) without a schema version bump.",
+  "self": {
+    "vendor": "com.snowplowanalytics",
+    "name": "cdc_source",
+    "format": "jsonschema",
+    "version": "1-0-0"
+  },
+  "type": "object",
+  "properties": {
+    "connector":          { "type": "string",                  "description": "The configured connector type (e.g., \"postgres\")." },
+    "db":                 { "type": "string",                  "description": "Source database name." },
+    "schema":             { "type": ["string", "null"],        "description": "Source schema name. Null for connectors without a schema concept (e.g., MongoDB)." },
+    "table":              { "type": "string",                  "description": "Source table or collection name." },
+    "lsn":                { "type": ["string", "null"],        "description": "Postgres canonical LSN (\"X/Y\" hex). Null for non-Postgres connectors." },
+    "txid":               { "type": ["integer", "null"], "minimum": 0, "description": "Postgres transaction id. Null for non-Postgres connectors or when not available." },
+    "is_snapshot":        { "type": "boolean",                 "description": "True if this event was emitted from an initial or incremental snapshot read; false for live streaming changes." },
+    "ts_ms":              { "type": "integer", "minimum": 0,   "description": "Source database transaction commit time, milliseconds since Unix epoch." },
+    "column_fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Stable hex SHA-256 hash (lowercase, 64 chars, no prefix) of the source table's columns at emission time. Computed over newline-separated `name<TAB>primitive<TAB>logical_name?<TAB>optional` lines in Debezium-reported declaration order. Algorithm is fixed at the cdc_source schema version; an algorithm change would be a 2-0-0 bump." }
+  },
+  "required": ["connector", "db", "table", "is_snapshot", "ts_ms", "column_fingerprint"],
+  "additionalProperties": false
+}
