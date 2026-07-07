@@ -1,0 +1,92 @@
+name: Release
+
+# Build and publish the container image to GHCR.
+#
+# Triggers:
+#   - push of a version tag (v*)      -> the normal release path
+#   - workflow_dispatch{version}      -> manual (re)publish of a specific version;
+#                                        used for the initial 0.1.0 publish, whose
+#                                        v0.1.0 tag predates this workflow (O2 / #39).
+#
+# Auth uses the built-in GITHUB_TOKEN — no external credentials. This works because the
+# workflow runs in an org-owned repo, so GITHUB_TOKEN can push to ghcr.io/<this org>/...
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (must match build.gradle.kts, e.g. 0.1.0)'
+        required: true
+
+# Don't cancel an in-flight publish.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/snowplow-industry-solutions/cdc-to-snowplow
+
+jobs:
+  publish:
+    name: build + push image to GHCR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          # Matches jvmToolchain(21) in build.gradle.kts (same as ci.yml).
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Resolve and verify version
+        id: version
+        # Pass the (write-access-gated but still untrusted) dispatch input through an env var,
+        # never interpolated directly into the script, so a crafted value can't run as shell.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            REQUESTED="$INPUT_VERSION"
+          else
+            REQUESTED="${GITHUB_REF_NAME#v}"   # v0.1.0 -> 0.1.0
+          fi
+          PROJECT="$(./gradlew --no-daemon -q printVersion)"
+          if [ "$REQUESTED" != "$PROJECT" ]; then
+            echo "::error::Requested version '$REQUESTED' does not match build.gradle.kts version '$PROJECT'. Bump the version or fix the tag before releasing."
+            exit 1
+          fi
+          echo "version=$REQUESTED" >> "$GITHUB_OUTPUT"
+          # Move :latest only for stable releases — a pre-release tag (e.g. v0.2.0-rc1) must not
+          # clobber the quickstart/demo shorthand.
+          case "$REQUESTED" in
+            *-*) echo "push_latest=false" >> "$GITHUB_OUTPUT" ;;
+            *)   echo "push_latest=true"  >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Build and push image (jib, daemonless)
+        # jib reads jib.to.image / jib.to.tags / jib.to.auth.* as native system properties,
+        # so the jib{} block in build.gradle.kts stays on its cdc-service:local dev default.
+        # Pushes :<version> (immutable pin) always, and :latest only for stable releases.
+        env:
+          IMAGE_REF: ${{ env.IMAGE }}:${{ steps.version.outputs.version }}
+          PUSH_LATEST: ${{ steps.version.outputs.push_latest }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          jib_args=(jib -Djib.to.image="$IMAGE_REF")
+          if [ "$PUSH_LATEST" = "true" ]; then
+            jib_args+=(-Djib.to.tags=latest)
+          fi
+          ./gradlew --no-daemon "${jib_args[@]}" \
+            -Djib.to.auth.username="$REGISTRY_USER" \
+            -Djib.to.auth.password="$REGISTRY_TOKEN"

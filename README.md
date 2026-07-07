@@ -19,15 +19,14 @@ java -jar cdc-service.jar run --config config.yaml
 **Option B - Docker image** (no JDK needed):
 
 ```bash
-# Download jib-image.tar from the latest GitHub Release, then:
-docker load < jib-image.tar          # loads the image as cdc-service:local
+docker pull ghcr.io/snowplow-industry-solutions/cdc-to-snowplow:0.1.0
 docker run --rm \
   -v "$PWD/config.yaml:/etc/cdc-service/config.yaml:ro" \
   -v cdc-offsets:/var/lib/cdc \
-  cdc-service:local                  # default args: run --config /etc/cdc-service/config.yaml
+  ghcr.io/snowplow-industry-solutions/cdc-to-snowplow:0.1.0    # default args: run --config /etc/cdc-service/config.yaml
 ```
 
-> The loaded image is tagged `cdc-service:local` - the tag is cosmetic for a downloaded asset and will be replaced by a registry reference (`docker pull`) once the image is published to GHCR in a fast-follow release.
+> Prefer an offline install? Download `jib-image.tar` from the same GitHub Release, then `docker load < jib-image.tar` - it loads the same image locally, tagged `cdc-service:local`.
 
 Don't have a config yet? Generate one with the [scaffold](#scaffold---generate-starter-config--iglu-schemas) subcommand, or copy the annotated [`examples/config.yaml`](examples/config.yaml). Prefer to build it yourself? See [Building from source](#building-from-source).
 
@@ -51,7 +50,7 @@ java -jar cdc-service.jar run --config examples/config.yaml
 docker run --rm \
   -v "$PWD/examples/config.yaml:/etc/cdc-service/config.yaml:ro" \
   -v cdc-offsets:/var/lib/cdc \
-  cdc-service:local            # default args are: run --config /etc/cdc-service/config.yaml
+  ghcr.io/snowplow-industry-solutions/cdc-to-snowplow:0.1.0    # default args: run --config /etc/cdc-service/config.yaml
 ```
 
 **Sourcing config from an environment variable (cloud deployments)**
@@ -81,7 +80,7 @@ java -jar cdc-service.jar scaffold \
 # Running via Docker (mount an output dir)
 docker run --rm -e PGPASSWORD \
   -v "$PWD/scaffold-out:/out" \
-  cdc-service:local scaffold \
+  ghcr.io/snowplow-industry-solutions/cdc-to-snowplow:0.1.0 scaffold \
   --connection postgres://cdc@host.docker.internal:5432/orders_db \
   --vendor com.example.cdc --tables public.orders --output /out
 ```
@@ -97,7 +96,7 @@ java -jar cdc-service.jar validate --config examples/config.yaml
 # Running via Docker
 docker run --rm \
   -v "$PWD/examples/config.yaml:/etc/cdc-service/config.yaml:ro" \
-  cdc-service:local validate --config /etc/cdc-service/config.yaml
+  ghcr.io/snowplow-industry-solutions/cdc-to-snowplow:0.1.0 validate --config /etc/cdc-service/config.yaml
 ```
 
 Exit codes: `0` clean, `1` drift errors detected, `2` the command could not run (bad config / DB unreachable).

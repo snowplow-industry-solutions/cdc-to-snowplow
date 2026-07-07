@@ -123,3 +123,9 @@ jib {
         setPaths("docker/jib-root")
     }
 }
+
+// Prints the project version (and nothing else, under -q) so the release workflow can assert
+// the git tag / dispatch input matches build.gradle.kts before it publishes an image.
+tasks.register("printVersion") {
+    doLast { println(project.version) }
+}
