@@ -1,0 +1,24 @@
+# Wiz Code repository scan configuration.
+#
+# Suppress the "restrictive license" Software Management findings raised against
+# build.gradle.kts. These are GPL-2.0-with-classpath-exception licences on
+# transitive dependencies the Debezium embedded engine pulls in:
+#
+#   debezium-embedded -> org.apache.kafka:connect-runtime -> jersey / hk2 /
+#   jax-rs / jaxb (org.glassfish.*, jakarta.*, javax.*)
+#
+# The Classpath Exception exists specifically so that linking/using these
+# libraries imposes no copyleft on our own code (it is the same licence OpenJDK
+# ships under), so redistributing them unmodified in the fat JAR / image is
+# fine. Wiz blanket-tags the GPL family as "Restrictive" and ignores the
+# exception, producing noise on every PR.
+#
+# Scoped to the restrictive-licence rule (wsscr-1) only, so genuine supply-chain
+# findings (malicious packages, CVEs, ...) on the manifest are still reported.
+# Removing the Jersey/Connect-REST stack outright is tracked separately:
+#   https://github.com/snowplow-industry-solutions/cdc-to-snowplow/issues/2
+ignore:
+  software_management:
+    wsscr-1:
+      /build.gradle.kts:
+        reason: EXCEPTION
