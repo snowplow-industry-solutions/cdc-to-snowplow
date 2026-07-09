@@ -33,6 +33,7 @@ offsets.dat
 
 # Scaffold output (generated, not committed)
 generated/
+scaffold-out/
 
 # OS / editor scratch
 *.swp

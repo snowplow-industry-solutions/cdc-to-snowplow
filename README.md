@@ -186,6 +186,49 @@ make down           # tear the stack down
 
 Validated events appear in Snowplow Micro at `http://localhost:9090` (`/micro/good`). See the `Makefile` for the full set of demo targets (`demo-update`, `demo-delete`, `demo-all`, `events-summary`, `logs`).
 
+### Scaffold demo
+
+A second walkthrough that showcases the `scaffold` subcommand: instead of using the committed config and schemas, you shape a database by hand, let `scaffold` generate the starter config + Iglu schemas from the live schema, make a few edits, then stream live changes. The Compose stack selects a replication-only Postgres init (via the `PG_INIT` env var) so the tables are created by your manual seed, not at boot.
+
+```bash
+make scaffold-db     # fresh Postgres, replication-only init (no tables)
+make seed            # manually create + populate customers and orders (docker/seed.sql)
+make scaffold        # generate scaffold-out/{config.yaml, schemas/, cdc-service-config.schema.json}
+#                    # ...now edit scaffold-out/config.yaml — see the checklist below...
+make scaffold-up     # boot Micro + service against the scaffolded config + schemas
+make demo            # live INSERT/UPDATE/DELETE on orders (op=c/u/d)
+make demo-customer   # live INSERT + UPDATE on customers (shows the edited transform)
+make events          # see the events in Micro
+make down            # tear down
+```
+
+`scaffold` runs on the Compose network and connects as `postgres://cdc@postgres:5432/...`, so the generated `source.hostname` is already `postgres` — the same name the in-Compose service uses. No hostname edit needed.
+
+**Edit checklist for `scaffold-out/config.yaml`** (the generated file is a deliberately bare starting point):
+
+1. **`snowplow.emitter.batch_size: 50` → `1`** — so single events flush to Micro immediately during the demo rather than waiting for a full batch.
+2. **`customers.columns`** — remove `email` (PII) and `created_at` (noise); the YAML whitelist is the contract, so dropped columns simply never leave the source.
+3. **`customers.columns`** — give `country_code` an `uppercase` transform:
+   ```yaml
+         - country_code:
+             transforms: [uppercase]
+   ```
+4. **`orders.columns`** — give `status` a `trim` transform (the seed rows are padded with whitespace):
+   ```yaml
+         - status:
+             transforms: [trim]
+   ```
+
+Transforms apply to TEXT columns only — a transform on a non-string column is a fatal startup error, by design. `scaffold` writes to a fresh directory and refuses to overwrite, so `make scaffold` clears `scaffold-out/` first; re-run it any time to regenerate from the live schema.
+
+**Running the changes by hand.** `make demo` / `make demo-customer` fire the CRUD for you, but for a presentation you can step through `docker/demo-walkthrough.sql` one statement at a time so the audience watches each event land. Open a session and paste a line at a time:
+
+```bash
+docker compose exec postgres psql -U cdc -d orders_db
+```
+
+The script walks a single `orders` row through `c → u → d`, then a `customers` row, with comments calling out what to look for in Micro (trimmed `status`, uppercased `country_code`, the absent `email`/`created_at`, and an update to a non-emitted column that still fires an event).
+
 ## Operating notes
 
 A few things to know before running this in anger - see design doc §10 for the full list.
