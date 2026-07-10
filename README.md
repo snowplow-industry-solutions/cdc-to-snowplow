@@ -43,8 +43,8 @@ Three subcommands, runnable from the fat JAR or the Docker image.
 ### `run` - stream changes
 
 ```bash
-# Running via Fat JAR
-java -jar cdc-service.jar run --config examples/config.yaml
+# Running via Fat JAR (against the Compose Postgres + Micro on localhost — see Demo)
+java -jar cdc-service.jar run --config examples/config.host.yaml
 
 # Running via Docker (mount the config and a writable offset dir)
 docker run --rm \
@@ -90,8 +90,8 @@ docker run --rm -e PGPASSWORD \
 ### `validate` - pre-deploy / CI drift check
 
 ```bash
-# Running via Fat JAR
-java -jar cdc-service.jar validate --config examples/config.yaml
+# Running via Fat JAR (against a local DB, e.g. the Compose Postgres on localhost)
+java -jar cdc-service.jar validate --config examples/config.host.yaml
 
 # Running via Docker
 docker run --rm \
@@ -171,55 +171,95 @@ Full model and known gaps: see [Operating notes](#operating-notes).
 
 ## Demo
 
-The Compose stack boots Postgres (with logical replication + seed schema), Snowplow Micro, and this service:
+Production ships as a container image (`ghcr.io/snowplow-industry-solutions/cdc-to-snowplow`, see [Quickstart](#quickstart)) run on a cloud runtime. This walkthrough runs the **same binary as a local fat JAR** so you see `scaffold` in its natural habitat and watch `run`'s structured logs land live. Postgres and Snowplow Micro stay in Docker; `scaffold` and `run` run on your host.
+
+**One-time env setup** — copy the demo values into a gitignored `.env`:
 
 ```bash
-make up             # build the Jib image, then `docker compose up -d`
-make demo           # run a sample INSERT against Postgres
-make demo-update    # run a sample UPDATE against Postgres
-make demo-delete    # run a sample DELETE against Postgres
-make demo-all       # run a sample INSERT, UPDATE, and DELETE against Postgres
-
-make events         # curl Snowplow Micro and show the captured events
-make down           # tear the stack down
+cp .env.example .env
 ```
 
-Validated events appear in Snowplow Micro at `http://localhost:9090` (`/micro/good`). See the `Makefile` for the full set of demo targets (`demo-update`, `demo-delete`, `demo-all`, `events-summary`, `logs`).
+Then, in each terminal you use, load them:
+
+```bash
+set -a; source .env; set +a     # POSTGRES_PASSWORD, COLLECTOR_URL, PGPASSWORD
+```
+
+(Optional: [`direnv`](https://direnv.net) auto-loads `.env` on `cd`.)
+
+**Run the default demo** (two terminals — `run` is a foreground, long-lived process):
+
+```bash
+# --- setup ---
+make build          # ./gradlew shadowJar -> build/libs/cdc-service.jar
+make db-up          # docker: Postgres (auto-creates the orders table), waits for ready
+make micro-up       # docker: Snowplow Micro on http://localhost:9090
+
+# --- terminal A: the service (shows live logs + heartbeat) ---
+set -a; source .env; set +a
+java -jar build/libs/cdc-service.jar run --config examples/config.host.yaml
+
+# --- terminal B: fire changes + inspect ---
+set -a; source .env; set +a
+make demo           # a sample INSERT   (op=c)
+make demo-update    # a sample UPDATE   (op=c then op=u)
+make demo-delete    # a sample DELETE   (op=c then op=d)
+make demo-all       # INSERT + UPDATE + DELETE on one row
+make events         # curl Snowplow Micro and show the captured events
+make down           # tear the Docker stack down (Ctrl-C terminal A first)
+```
+
+Validated events appear in Snowplow Micro at `http://localhost:9090` (`/micro/good`). See the `Makefile` for the full set of helper targets (`events-summary`, `demo-replay`, `demo-customer`). The service writes its WAL offset to `./offsets.dat` (gitignored); delete it if you want a clean slate between runs.
 
 ### Scaffold demo
 
 A second walkthrough that showcases the `scaffold` subcommand: instead of using the committed config and schemas, you shape a database by hand, let `scaffold` generate the starter config + Iglu schemas from the live schema, make a few edits, then stream live changes. The Compose stack selects a replication-only Postgres init (via the `PG_INIT` env var) so the tables are created by your manual seed, not at boot.
 
 ```bash
+make build           # fat JAR
 make scaffold-db     # fresh Postgres, replication-only init (no tables)
 make seed            # manually create + populate customers and orders (docker/seed.sql)
-make scaffold        # generate scaffold-out/{config.yaml, schemas/, cdc-service-config.schema.json}
+set -a; source .env; set +a
+
+# generate scaffold-out/{config.yaml, schemas/, cdc-service-config.schema.json} from the live DB:
+java -jar build/libs/cdc-service.jar scaffold \
+  --connection postgres://cdc@localhost:5432/orders_db \
+  --vendor com.example \
+  --tables public.orders,public.customers \
+  --output ./scaffold-out
 #                    # ...now edit scaffold-out/config.yaml — see the checklist below...
-make scaffold-up     # boot Micro + service against the scaffolded config + schemas
+
+SCHEMAS_DIR=./scaffold-out/schemas make micro-up   # Micro mounts the generated schemas
+
+# terminal A: the service against the scaffolded (and edited) config
+java -jar build/libs/cdc-service.jar run --config ./scaffold-out/config.yaml
+
+# terminal B:
 make demo            # live INSERT/UPDATE/DELETE on orders (op=c/u/d)
 make demo-customer   # live INSERT + UPDATE on customers (shows the edited transform)
 make events          # see the events in Micro
-make down            # tear down
+make down            # tear down (Ctrl-C terminal A first)
 ```
 
-`scaffold` runs on the Compose network and connects as `postgres://cdc@postgres:5432/...`, so the generated `source.hostname` is already `postgres` — the same name the in-Compose service uses. No hostname edit needed.
+Because you scaffold via `--connection postgres://cdc@localhost:5432/...`, the generated `source.hostname` is already `localhost` — no hostname edit needed. `password`/`collector_url` are generated as `${POSTGRES_PASSWORD}`/`${COLLECTOR_URL}` and supplied by `source .env`.
 
 **Edit checklist for `scaffold-out/config.yaml`** (the generated file is a deliberately bare starting point):
 
-1. **`snowplow.emitter.batch_size: 50` → `1`** — so single events flush to Micro immediately during the demo rather than waiting for a full batch.
-2. **`customers.columns`** — remove `email` (PII) and `created_at` (noise); the YAML whitelist is the contract, so dropped columns simply never leave the source.
-3. **`customers.columns`** — give `country_code` an `uppercase` transform:
+1. **`debezium.offset_store.file_path: /var/lib/cdc/offsets.dat` → `./scaffold-out/offsets.dat`** — the generated default points at the container's mounted volume; on the host use a local, writable path (gitignored via `scaffold-out/`).
+2. **`snowplow.emitter.batch_size: 50` → `1`** — so single events flush to Micro immediately during the demo rather than waiting for a full batch.
+3. **`customers.columns`** — remove `email` (PII); the YAML whitelist is the contract, so a dropped column simply never leaves the source.
+4. **`customers.columns`** — give `country_code` an `uppercase` transform:
    ```yaml
          - country_code:
              transforms: [uppercase]
    ```
-4. **`orders.columns`** — give `status` a `trim` transform (the seed rows are padded with whitespace):
+5. **`orders.columns`** — give `status` a `trim` transform (the seed rows are padded with whitespace):
    ```yaml
          - status:
              transforms: [trim]
    ```
 
-Transforms apply to TEXT columns only — a transform on a non-string column is a fatal startup error, by design. `scaffold` writes to a fresh directory and refuses to overwrite, so `make scaffold` clears `scaffold-out/` first; re-run it any time to regenerate from the live schema.
+Transforms apply to TEXT columns only — a transform on a non-string column is a fatal startup error, by design. `scaffold` writes to a fresh directory and refuses to overwrite, so remove `scaffold-out/` first (`rm -rf scaffold-out`); re-run the `scaffold` command any time to regenerate from the live schema.
 
 **Running the changes by hand.** `make demo` / `make demo-customer` fire the CRUD for you, but for a presentation you can step through `docker/demo-walkthrough.sql` one statement at a time so the audience watches each event land. Open a session and paste a line at a time:
 
@@ -227,7 +267,7 @@ Transforms apply to TEXT columns only — a transform on a non-string column is 
 docker compose exec postgres psql -U cdc -d orders_db
 ```
 
-The script walks a single `orders` row through `c → u → d`, then a `customers` row, with comments calling out what to look for in Micro (trimmed `status`, uppercased `country_code`, the absent `email`/`created_at`, and an update to a non-emitted column that still fires an event).
+The script walks a single `orders` row through `c → u → d`, then a `customers` row, with comments calling out what to look for in Micro (trimmed `status`, uppercased `country_code`, the absent `email`, and an update to a non-emitted column that still fires an event).
 
 ## Operating notes
 

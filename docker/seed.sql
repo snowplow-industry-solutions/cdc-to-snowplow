@@ -4,9 +4,8 @@
 --   docker compose exec -T postgres psql -U cdc -d orders_db < docker/seed.sql
 --
 -- The two tables are shaped to make the scaffold edit story obvious:
---   * customers carries a PII column (email) and a noise column (created_at) you DROP
---     from the generated config, plus country_code (TEXT) you add an `uppercase`
---     transform to.
+--   * customers carries a PII column (email) you DROP from the generated config, plus
+--     country_code (TEXT) you add an `uppercase` transform to.
 --   * orders.status (TEXT) is seeded padded with whitespace, so an added `trim`
 --     transform has a visible effect downstream.
 --
