@@ -39,6 +39,33 @@ dependencies {
     testImplementation("uk.org.webcompere:system-stubs-jupiter:2.1.7")
 }
 
+// Kafka Connect's REST-server stack (Jersey / HK2 / JAX-RS / JAXB) is dragged onto the classpath
+// transitively via debezium-embedded -> org.apache.kafka:connect-runtime, but is never exercised:
+// the embedded engine runs the connector in-process and does NOT start Connect's REST server
+// (confirmed — EngineRunner only touches io.debezium.engine.* and the connect.storage offset
+// stores; grep finds zero Jersey/JAX-RS references in src/). connect-runtime itself is KEPT because
+// FileOffsetBackingStore / JdbcOffsetBackingStore live there. Excluding these leaves drops all 14
+// GPL-2.0-with-classpath-exception ("restrictive license") Wiz findings plus their CVEs, and shrinks
+// the fat JAR and image. Applied at the configuration level so no alternate resolution path
+// (e.g. connect-api's own javax.ws.rs-api) can re-add them. See issue #2.
+configurations.all {
+    exclude(group = "org.glassfish.jersey.containers")
+    exclude(group = "org.glassfish.jersey.core")
+    exclude(group = "org.glassfish.jersey.inject")
+    exclude(group = "org.glassfish.hk2")
+    exclude(group = "org.glassfish.hk2.external")
+    exclude(group = "jakarta.ws.rs")
+    exclude(group = "javax.ws.rs")
+    exclude(group = "javax.xml.bind", module = "jaxb-api")
+    // jaxb-api's only live consumer was jackson-module-jaxb-annotations (dragged in by
+    // connect-runtime for Connect's REST JSON provider). It is NOT used by JsonConverter or the
+    // offset stores, but logstash-logback-encoder's Jackson findAndRegisterModules() auto-registers
+    // it via ServiceLoader on startup — which calls JaxbAnnotationIntrospector -> javax.xml.bind
+    // and NoClassDefFounds once jaxb-api is gone (the okhttp precedent, issue #2 / build.gradle:21).
+    // Excluding the module removes that auto-registration so jaxb-api genuinely becomes dead weight.
+    exclude(group = "com.fasterxml.jackson.module", module = "jackson-module-jaxb-annotations")
+}
+
 application {
     mainClass.set("com.snowplowanalytics.cdc.MainKt")
 }
