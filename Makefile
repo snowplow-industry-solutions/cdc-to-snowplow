@@ -1,4 +1,4 @@
-.PHONY: build image up demo demo-update demo-delete demo-all demo-replay events events-summary down logs \
+.PHONY: build image up db-up micro-up demo demo-update demo-delete demo-all demo-replay events events-summary down logs \
         scaffold-db seed scaffold scaffold-up demo-customer
 
 # Fat-JAR distribution artefact -> build/libs/cdc-service.jar. Standalone: NOT on the `up`
@@ -12,6 +12,20 @@ image:
 
 up: image
 	docker compose up -d
+
+# Boot Postgres with the default demo init (auto-creates the orders table) and wait for it.
+# Host-run demo: replaces the postgres half of the old `up` target.
+db-up:
+	docker compose up -d postgres
+	@echo "waiting for postgres..."
+	@until docker compose exec -T postgres pg_isready -U cdc -d orders_db >/dev/null 2>&1; do sleep 1; done
+	@echo "postgres ready — run 'make micro-up', then the host 'run' command (see README Demo)."
+
+# Boot Snowplow Micro. SCHEMAS_DIR is overridable so the scaffold demo can point it at
+# ./scaffold-out/schemas (e.g. `SCHEMAS_DIR=./scaffold-out/schemas make micro-up`).
+micro-up:
+	docker compose up -d snowplow-micro
+	@echo "micro up on http://localhost:9090 (schemas: $${SCHEMAS_DIR:-./schemas})"
 
 # Single INSERT — emits one event with op=c.
 demo:
