@@ -5,6 +5,9 @@ build/
 !**/src/**/build/
 out/
 
+# Eclipse / VS Code Java compiled output
+bin/
+
 # IntelliJ / Android Studio
 .idea/
 *.iml
