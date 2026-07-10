@@ -1,8 +1,8 @@
 .PHONY: build image db-up micro-up demo demo-update demo-delete demo-all demo-replay events events-summary down \
         scaffold-db seed demo-customer
 
-# Fat-JAR distribution artefact -> build/libs/cdc-service.jar. Standalone: NOT on the `up`
-# path, since Jib builds the image from compiled classes and does not consume the fat JAR.
+# Fat-JAR distribution artefact -> build/libs/cdc-service.jar. Standalone: not built by
+# `image`/Jib, which compiles the container image from classes and does not consume the fat JAR.
 build:
 	./gradlew shadowJar
 
@@ -131,7 +131,7 @@ seed:
 	@echo "seeded customers + orders — run the host 'scaffold' command (see README Scaffold demo)."
 
 # Live INSERT then UPDATE on the seeded customers table. Shows the edited transform
-# (country_code uppercased) and the dropped columns (email/created_at absent from the event).
+# (country_code uppercased) and the dropped column (email absent from the event).
 demo-customer:
 	@ID=$$RANDOM; \
 	  echo "-->INSERT customer id=$$ID (op=c)"; \
@@ -141,4 +141,4 @@ demo-customer:
 	  docker compose exec postgres psql -U cdc -d orders_db -c \
 	    "UPDATE public.customers SET country_code='de' WHERE id=$$ID"; \
 	  echo ""; \
-	  echo "Run 'make events' — country_code should be UPPERCASE and email/created_at absent."
+	  echo "Run 'make events' — country_code should be UPPERCASE and email absent (created_at IS emitted)."
