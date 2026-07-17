@@ -1,12 +1,17 @@
 name: Release
 
-# Build and publish the container image to GHCR.
+# Build and publish the release artifacts: the container image to GHCR, plus a GitHub
+# Release carrying the fat JAR (cdc-service.jar) and the offline image tar (jib-image.tar)
+# that the README's install instructions point at.
 #
 # Triggers:
 #   - push of a version tag (v*)      -> the normal release path
 #   - workflow_dispatch{version}      -> manual (re)publish of a specific version;
 #                                        used for the initial 0.1.0 publish, whose
 #                                        v0.1.0 tag predates this workflow (O2 / #39).
+#                                        Builds from the dispatched ref (normally main),
+#                                        not from the tag — the version guard below only
+#                                        asserts the version string matches.
 #
 # Auth uses the built-in GITHUB_TOKEN — no external credentials. This works because the
 # workflow runs in an org-owned repo, so GITHUB_TOKEN can push to ghcr.io/<this org>/...
@@ -25,8 +30,8 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
-  packages: write
+  contents: write # create the GitHub Release and upload its assets
+  packages: write # push the image to GHCR
 
 env:
   IMAGE: ghcr.io/snowplow-industry-solutions/cdc-to-snowplow
@@ -73,6 +78,13 @@ jobs:
             *)   echo "push_latest=true"  >> "$GITHUB_OUTPUT" ;;
           esac
 
+      - name: Build release assets (fat JAR + offline image tar)
+        # smokeJar dependsOn shadowJar: builds build/libs/cdc-service.jar and proves it
+        # launches — a broken JAR fails here, before anything is published.
+        # jibBuildTar runs with the default jib{} config, so build/jib-image.tar loads as
+        # cdc-service:local, exactly as the README's offline-install instructions say.
+        run: ./gradlew --no-daemon smokeJar jibBuildTar
+
       - name: Build and push image (jib, daemonless)
         # jib reads jib.to.image / jib.to.tags / jib.to.auth.* as native system properties,
         # so the jib{} block in build.gradle.kts stays on its cdc-service:local dev default.
@@ -90,3 +102,26 @@ jobs:
           ./gradlew --no-daemon "${jib_args[@]}" \
             -Djib.to.auth.username="$REGISTRY_USER" \
             -Djib.to.auth.password="$REGISTRY_TOKEN"
+
+      - name: Create GitHub Release and upload assets
+        # Runs last so a failed image push never leaves a release pointing at an
+        # unpublished image. --verify-tag means the v<version> tag must already exist
+        # (always true on tag push; on dispatch, tag the commit first).
+        # Re-dispatching a version whose release already exists replaces its assets.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.version.outputs.version }}
+          STABLE: ${{ steps.version.outputs.push_latest }}
+        run: |
+          tag="v$VERSION"
+          assets=(build/libs/cdc-service.jar build/jib-image.tar)
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "${assets[@]}" --clobber
+          else
+            create_args=(--verify-tag --generate-notes --title "$tag")
+            if [ "$STABLE" = "false" ]; then
+              create_args+=(--prerelease)
+            fi
+            gh release create "$tag" "${assets[@]}" "${create_args[@]}"
+          fi
