@@ -14,7 +14,7 @@
 -- README "Scaffold demo" are in place, i.e. the running config:
 --   * trims orders.status
 --   * uppercases customers.country_code
---   * drops customers.email and customers.created_at from the emitted payload
+--   * drops customers.email from the emitted payload
 -- The IDs below (orders 1001, customers 5001) are chosen not to collide with the
 -- seed rows so you can track a single row's whole lifecycle.
 -- ============================================================================
@@ -34,11 +34,12 @@ UPDATE public.orders SET status = '  shipped  ', total = 50.00 WHERE id = 1001;
 DELETE FROM public.orders WHERE id = 1001;
 
 
--- ── Part 2: customers — uppercase transform + dropped PII columns ───────────
+-- ── Part 2: customers — uppercase transform + dropped PII column (email) ─────
 
 -- (c) INSERT. country_code is lowercase "jp"; the emitted after.country_code should
---     arrive UPPERCASE ("JP"). email and created_at are set here but must NOT appear
---     in the event payload — they are not on the YAML whitelist.
+--     arrive UPPERCASE ("JP"). email is set here but must NOT appear in the event
+--     payload — it is not on the YAML whitelist. (created_at IS emitted — it stays
+--     on the whitelist.)
 INSERT INTO public.customers (id, email, first_name, last_name, country_code) VALUES (5001, 'secret@acme.com', 'Demo', 'User', 'jp');
 
 -- (u) UPDATE a whitelisted column. before.country_code = "JP", after = "KR".

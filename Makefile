@@ -1,8 +1,8 @@
-.PHONY: build image up demo demo-update demo-delete demo-all demo-replay events events-summary down logs \
-        scaffold-db seed scaffold scaffold-up demo-customer
+.PHONY: build image db-up micro-up demo demo-update demo-delete demo-all demo-replay events events-summary down \
+        scaffold-db seed demo-customer
 
-# Fat-JAR distribution artefact -> build/libs/cdc-service.jar. Standalone: NOT on the `up`
-# path, since Jib builds the image from compiled classes and does not consume the fat JAR.
+# Fat-JAR distribution artefact -> build/libs/cdc-service.jar. Standalone: not built by
+# `image`/Jib, which compiles the container image from classes and does not consume the fat JAR.
 build:
 	./gradlew shadowJar
 
@@ -10,8 +10,19 @@ build:
 image:
 	./gradlew jibDockerBuild
 
-up: image
-	docker compose up -d
+# Boot Postgres with the default demo init (auto-creates the orders table) and wait for it.
+# Host-run demo: replaces the postgres half of the old `up` target.
+db-up:
+	docker compose up -d postgres
+	@echo "waiting for postgres..."
+	@until docker compose exec -T postgres pg_isready -U cdc -d orders_db >/dev/null 2>&1; do sleep 1; done
+	@echo "postgres ready — run 'make micro-up', then the host 'run' command (see README Demo)."
+
+# Boot Snowplow Micro. SCHEMAS_DIR is overridable so the scaffold demo can point it at
+# ./scaffold-out/schemas (e.g. `SCHEMAS_DIR=./scaffold-out/schemas make micro-up`).
+micro-up:
+	docker compose up -d snowplow-micro
+	@echo "micro up on http://localhost:9090 (schemas: $${SCHEMAS_DIR:-./schemas})"
 
 # Single INSERT — emits one event with op=c.
 demo:
@@ -95,15 +106,13 @@ events-summary:
 down:
 	docker compose down -v
 
-logs:
-	docker compose logs -f cdc-service
-
 # ---- Scaffold demo --------------------------------------------------------
 # Showcases the `scaffold` subcommand end to end: shape a Postgres DB by hand,
 # let scaffold generate starter config + Iglu schemas from the live schema, make
 # a few edits, then stream live changes into Micro. Full walkthrough + the edit
 # checklist live in README "Scaffold demo". Ordered: scaffold-db -> seed ->
-# scaffold -> (edit scaffold-out/config.yaml) -> scaffold-up -> demo* -> events.
+# scaffold (host: java -jar … scaffold) -> edit scaffold-out/config.yaml ->
+# micro-up (SCHEMAS_DIR=./scaffold-out/schemas) -> run (host) -> demo* -> events.
 
 VENDOR       ?= com.example
 SCAFFOLD_OUT ?= scaffold-out
@@ -119,31 +128,10 @@ scaffold-db:
 # 2. Manually seed the customers + orders tables and sample rows.
 seed:
 	docker compose exec -T postgres psql -U cdc -d orders_db < docker/seed.sql
-	@echo "seeded customers + orders — run 'make scaffold'."
-
-# 3. Generate starter config + schemas from the live DB. Runs on the compose
-#    network (so the connection host is the service name 'postgres', which is what
-#    the in-compose service will use too — no hostname edit needed). Needs the image.
-scaffold: image
-	rm -rf $(SCAFFOLD_OUT) && mkdir -p $(SCAFFOLD_OUT)
-	docker compose run --rm --no-deps -e PGPASSWORD=cdc -v "$$PWD/$(SCAFFOLD_OUT):/out" \
-	  cdc-service scaffold \
-	  --connection postgres://cdc@postgres:5432/orders_db \
-	  --vendor $(VENDOR) \
-	  --tables public.orders,public.customers \
-	  --output /out
-	@echo ""
-	@echo "Scaffold written to $(SCAFFOLD_OUT)/. Edit $(SCAFFOLD_OUT)/config.yaml (see README"
-	@echo "'Scaffold demo' for the checklist), then run 'make scaffold-up'."
-
-# 4. Boot Micro + the service against the scaffolded (and edited) config + schemas.
-scaffold-up:
-	SCHEMAS_DIR=./$(SCAFFOLD_OUT)/schemas CONFIG_FILE=./$(SCAFFOLD_OUT)/config.yaml \
-	  docker compose up -d snowplow-micro cdc-service
-	@echo "service up — run 'make demo' / 'make demo-customer', then 'make events'."
+	@echo "seeded customers + orders — run the host 'scaffold' command (see README Scaffold demo)."
 
 # Live INSERT then UPDATE on the seeded customers table. Shows the edited transform
-# (country_code uppercased) and the dropped columns (email/created_at absent from the event).
+# (country_code uppercased) and the dropped column (email absent from the event).
 demo-customer:
 	@ID=$$RANDOM; \
 	  echo "-->INSERT customer id=$$ID (op=c)"; \
@@ -153,4 +141,4 @@ demo-customer:
 	  docker compose exec postgres psql -U cdc -d orders_db -c \
 	    "UPDATE public.customers SET country_code='de' WHERE id=$$ID"; \
 	  echo ""; \
-	  echo "Run 'make events' — country_code should be UPPERCASE and email/created_at absent."
+	  echo "Run 'make events' — country_code should be UPPERCASE and email absent (created_at IS emitted)."
