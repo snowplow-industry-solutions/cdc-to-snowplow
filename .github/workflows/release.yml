@@ -89,13 +89,16 @@ jobs:
         # jib reads jib.to.image / jib.to.tags / jib.to.auth.* as native system properties,
         # so the jib{} block in build.gradle.kts stays on its cdc-service:local dev default.
         # Pushes :<version> (immutable pin) always, and :latest only for stable releases.
+        # jib.from.platforms makes the registry push a multi-arch (amd64 + arm64) manifest;
+        # it applies to this `jib` task only — jibBuildTar/jibDockerBuild don't support
+        # multi-platform, so the offline tar above stays single-arch (amd64).
         env:
           IMAGE_REF: ${{ env.IMAGE }}:${{ steps.version.outputs.version }}
           PUSH_LATEST: ${{ steps.version.outputs.push_latest }}
           REGISTRY_USER: ${{ github.actor }}
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          jib_args=(jib -Djib.to.image="$IMAGE_REF")
+          jib_args=(jib -Djib.to.image="$IMAGE_REF" -Djib.from.platforms=linux/amd64,linux/arm64)
           if [ "$PUSH_LATEST" = "true" ]; then
             jib_args+=(-Djib.to.tags=latest)
           fi
