@@ -4,6 +4,8 @@ deployment_mode = "scheduled"
 
 project_id      = "my-gcp-project"
 region          = "europe-west1"
+# Must live in Artifact Registry — Cloud Run can't pull ghcr.io directly.
+# Mirror the released GHCR image (or your own Jib build) here first; see README step 4.
 container_image = "europe-west1-docker.pkg.dev/my-gcp-project/cdc/cdc-service:0.1.0"
 
 network               = "projects/my-gcp-project/global/networks/cdc-vpc"

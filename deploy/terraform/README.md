@@ -32,6 +32,22 @@ policies per phase — handy for getting unblocked in a locked-down sandbox.
 Both postures use the **JDBC offset store into the source DB**, so neither needs a
 persistent volume.
 
+## Sourcing the container image
+
+Releases publish a public multi-arch (amd64 + arm64) image to
+`ghcr.io/snowplow-industry-solutions/cdc-to-snowplow` (see the repo README's
+Quickstart). Pick the path that matches what you're doing:
+
+| You are… | Image path |
+|---|---|
+| Trying the demo | Use the GHCR image directly (AWS) or proxy it through an Artifact Registry remote repository (GCP — Cloud Run can only deploy from AR/GCR, never from ghcr.io) |
+| Running for real | Mirror a pinned digest into your own ECR/AR and deploy from there — keeps pulls inside your cloud (VPC endpoints, no GHCR availability/rate-limit coupling) and lets your registry scanning see the image |
+| Forking / changing the code | Build and push your own with Jib (the `jib` commands in the per-cloud steps below) |
+
+The per-cloud sections below show the demo and Jib paths; mirroring for real use
+is the same `docker pull` / `tag` / `push` as the GCP mirror option, pointed at
+your own repo and pinned by digest.
+
 ## Deploying on GCP (end-to-end)
 
 The `bootstrap` layer creates the VPC, a Cloud SQL Postgres instance with an
@@ -87,10 +103,28 @@ PGPASSWORD="$DB_PASSWORD" psql \
 On Cloud SQL this succeeds even run as `cdc` itself (Cloud SQL grants its users the
 `cloudsqlsuperuser` role). Debezium auto-creates the publication.
 
-**4. Push the image and apply the service.**
+**4. Get the image into Artifact Registry and apply the service.** Cloud Run
+only deploys images from Artifact Registry (or legacy GCR) — it cannot pull
+`ghcr.io` directly, so even the released image has to transit AR. Either mirror
+the released image into the bootstrap repo:
+
+```bash
+docker pull ghcr.io/snowplow-industry-solutions/cdc-to-snowplow:0.1.0
+docker tag ghcr.io/snowplow-industry-solutions/cdc-to-snowplow:0.1.0 <registry_url>/cdc-service:0.1.0
+docker push <registry_url>/cdc-service:0.1.0
+```
+
+(or skip the manual copy by creating an AR [remote repository](https://cloud.google.com/artifact-registry/docs/repositories/remote-repo)
+proxying `ghcr.io` and pointing `container_image` at it), or — if you've changed
+the code — build and push your own with Jib:
 
 ```bash
 ./gradlew jib -Djib.to.image=<registry_url>/cdc-service:0.1.0
+```
+
+Then apply:
+
+```bash
 terraform -chdir=$CHDIR/service init
 terraform -chdir=$CHDIR/service apply -var-file=../../examples/gcp-B.tfvars
 ```
@@ -214,7 +248,17 @@ PGPASSWORD="$DB_PASSWORD" psql \
 
 Debezium auto-creates the publication.
 
-**6. Push the image.**
+**6. Choose the image.** Running the released demo unchanged? Skip the build
+and push entirely — Fargate pulls public registries anonymously (the example
+tfvars' `assign_public_ip = true` posture gives the task the internet path it
+needs), so just set in your service tfvars:
+
+```hcl
+container_image = "ghcr.io/snowplow-industry-solutions/cdc-to-snowplow:0.1.0"
+```
+
+(bootstrap's ECR repo then goes unused — that's fine). If you've changed the
+code, build and push your own instead:
 
 ```bash
 REGISTRY_URL="$(terraform -chdir=$CHDIR/bootstrap output -raw registry_url)"
@@ -317,7 +361,7 @@ the service describes its *source*):
 | `db_name` | `db_name` | `source_database` |
 | `db_user` | `db_user` | `source_username` / `offset_username` |
 | `db_password_secret_id` | `db_password_secret_arn` | `db_password_secret_id` / `db_password_secret_arn` |
-| `registry_url` | `registry_url` | (push the image here; feed the full ref to `container_image`) |
+| `registry_url` | `registry_url` | (push/mirror the image here; feed the full ref to `container_image`. Unused on AWS when deploying the released GHCR image directly) |
 
 The example tfvars in `examples/` show plausible literal values for each.
 

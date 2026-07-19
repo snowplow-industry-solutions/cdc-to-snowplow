@@ -2,6 +2,8 @@
 deployment_mode = "scheduled"
 
 region          = "eu-west-1"
+# Own build pushed to ECR; for the released demo use the public image instead:
+# container_image = "ghcr.io/snowplow-industry-solutions/cdc-to-snowplow:0.1.0"
 container_image = "123456789012.dkr.ecr.eu-west-1.amazonaws.com/cdc:0.1.0"
 
 vpc_id                 = "vpc-0123456789abcdef0"
