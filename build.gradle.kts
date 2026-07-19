@@ -13,10 +13,10 @@ repositories {
 }
 
 dependencies {
-    implementation("io.debezium:debezium-api:3.0.7.Final")
-    implementation("io.debezium:debezium-embedded:3.0.7.Final")
-    implementation("io.debezium:debezium-connector-postgres:3.0.7.Final")
-    implementation("io.debezium:debezium-storage-jdbc:3.0.7.Final")
+    implementation("io.debezium:debezium-api:3.6.0.Final")
+    implementation("io.debezium:debezium-embedded:3.6.0.Final")
+    implementation("io.debezium:debezium-connector-postgres:3.6.0.Final")
+    implementation("io.debezium:debezium-storage-jdbc:3.6.0.Final")
     implementation("com.snowplowanalytics:snowplow-java-tracker:2.1.0")
     // snowplow-java-tracker 2.1.0 declares okhttp as provided/optional; it is required at
     // runtime by BatchEmitter's OkHttpClientAdapter. Without this the fat JAR's `run` mode
