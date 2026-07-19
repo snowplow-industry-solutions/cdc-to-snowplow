@@ -1,7 +1,7 @@
 plugins {
     kotlin("jvm") version "2.1.10"
     application
-    id("com.gradleup.shadow") version "8.3.5"
+    id("com.gradleup.shadow") version "9.6.0"
     id("com.google.cloud.tools.jib") version "3.4.4"
 }
 
