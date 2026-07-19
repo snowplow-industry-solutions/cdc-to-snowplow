@@ -26,7 +26,7 @@ docker run --rm \
   ghcr.io/snowplow-industry-solutions/cdc-to-snowplow:0.1.0    # default args: run --config /etc/cdc-service/config.yaml
 ```
 
-> Prefer an offline install? Download `jib-image.tar` from the same GitHub Release, then `docker load < jib-image.tar` - it loads the same image locally, tagged `cdc-service:local`.
+> Prefer an offline install? Download `jib-image.tar` from the same GitHub Release, then `docker load < jib-image.tar` - it loads the same image locally, tagged `cdc-service:local`. Note the offline tar is amd64-only - the multi-arch (amd64 + arm64) manifest applies only to the GHCR-pushed image.
 
 Don't have a config yet? Generate one with the [scaffold](#scaffold---generate-starter-config--iglu-schemas) subcommand, or copy the annotated [`examples/config.yaml`](examples/config.yaml). Prefer to build it yourself? See [Building from source](#building-from-source).
 
